@@ -22,3 +22,12 @@ The app was divided into three main screens:
 - A community screen where users can view updates shared by other users  
 
 This version improved usability and expanded the app beyond a single-function timer into a more structured utility application.
+### Version 3.0
+
+In Version 3.0, the application moved from a structural layout prototype to a fully interactive utility app.
+
+A complete timer mechanism was implemented using Compose state management and coroutine-based countdown logic. Users are now able to start, pause, and resume focus sessions, with real-time updates reflected in the UI.
+
+A progress indicator was added to enhance visual feedback, and session tracking was introduced to monitor daily focus duration.
+
+These improvements strengthened the application's core purpose as a focus-oriented utility tool and demonstrated deeper integration of Jetpack Compose state management.
