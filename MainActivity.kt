@@ -30,9 +30,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,13 +40,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,6 +57,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -64,7 +67,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import java.util.Locale
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
 
 class MainActivity : ComponentActivity() {
 
@@ -77,6 +89,103 @@ class MainActivity : ComponentActivity() {
                     DeepFocusApp()
                 }
             }
+        }
+    }
+}
+
+// --- Network Layer ---
+data class Quote(val q: String, val a: String)
+
+interface QuoteApiService {
+    @GET("random")
+    suspend fun getRandomQuote(): List<Quote>
+}
+
+object RetrofitInstance {
+    private const val BASE_URL = "https://zenquotes.io/api/"
+    val api: QuoteApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(QuoteApiService::class.java)
+    }
+}
+
+// --- ViewModel for Focus and Settings ---
+class FocusViewModel : ViewModel() {
+    // Backing properties
+    private val _focusDuration = MutableStateFlow(25) // in minutes
+    private val _timeLeftInSeconds = MutableStateFlow(25 * 60)
+    private val _isFocusing = MutableStateFlow(false)
+    private val _todayMinutes = MutableStateFlow(60) // placeholder
+    private val _dailyQuote = MutableStateFlow("Loading quote...")
+
+    // Public immutable StateFlows for UI
+    val focusDuration: StateFlow<Int> = _focusDuration.asStateFlow()
+    val timeLeftInSeconds: StateFlow<Int> = _timeLeftInSeconds.asStateFlow()
+    val isFocusing: StateFlow<Boolean> = _isFocusing.asStateFlow()
+    val todayMinutes: StateFlow<Int> = _todayMinutes.asStateFlow()
+    val dailyQuote: StateFlow<String> = _dailyQuote.asStateFlow()
+
+    private var timerJob: Job? = null
+
+    init {
+        fetchQuote()
+    }
+
+    private fun fetchQuote() {
+        viewModelScope.launch {
+            try {
+                val quotes = RetrofitInstance.api.getRandomQuote()
+                if (quotes.isNotEmpty()) {
+                    _dailyQuote.value = "\"${quotes[0].q}\" - ${quotes[0].a}"
+                } else {
+                    _dailyQuote.value = "Could not fetch quote."
+                }
+            } catch (e: Exception) {
+                _dailyQuote.value = "Could not fetch quote."
+            }
+        }
+    }
+
+    fun setFocusDuration(duration: Int) {
+        _focusDuration.value = duration
+        // Reset timer if duration is changed when not focusing
+        if (!_isFocusing.value) {
+            _timeLeftInSeconds.value = duration * 60
+        }
+    }
+
+    fun start() {
+        if (_isFocusing.value) return // Already running
+
+        _isFocusing.value = true
+        timerJob = viewModelScope.launch {
+            while (_timeLeftInSeconds.value > 0) {
+                delay(1000L)
+                _timeLeftInSeconds.update { it - 1 }
+            }
+            reset()
+        }
+    }
+
+    fun pause() {
+        _isFocusing.value = false
+        timerJob?.cancel()
+    }
+
+    fun reset() {
+        _isFocusing.value = false
+        timerJob?.cancel()
+        _timeLeftInSeconds.value = _focusDuration.value * 60
+    }
+
+    fun handleTimerAction() {
+        if (_isFocusing.value) {
+            pause()
+        } else {
+            start()
         }
     }
 }
@@ -185,12 +294,14 @@ fun DeepFocusApp() {
 
 @Composable
 fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
+    val focusViewModel: FocusViewModel = viewModel()
+
     NavHost(navController, startDestination = Screen.Home.route, modifier = modifier) {
-        composable(Screen.Home.route) { HomeScreen() }
-        composable(Screen.Focus.route) { FocusScreen() }
+        composable(Screen.Home.route) { HomeScreen(focusViewModel = focusViewModel) }
+        composable(Screen.Focus.route) { FocusScreen(focusViewModel = focusViewModel) }
         composable(Screen.Me.route) { MeScreen(navController = navController) }
         composable(Screen.ProfileEditor.route) { ProfileEditorScreen() }
-        composable(Screen.Settings.route) { SettingsScreen() }
+        composable(Screen.Settings.route) { SettingsScreen(focusViewModel = focusViewModel) }
     }
 }
 
@@ -243,7 +354,9 @@ fun PostCard(post: FocusPost, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(modifier: Modifier = Modifier, focusViewModel: FocusViewModel) {
+    val dailyQuote by focusViewModel.dailyQuote.collectAsState()
+
     // Sample data for demonstration
     val posts = remember {
         listOf(
@@ -258,7 +371,18 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        items(posts) { post ->
+        // Daily Quote Card
+        item {
+            Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Quote of the Day", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(dailyQuote, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        items(posts, key = { it.id }) { post ->
             PostCard(post = post, modifier = Modifier.padding(bottom = 8.dp))
         }
     }
@@ -350,48 +474,46 @@ fun ProfileEditorScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(modifier: Modifier = Modifier, focusViewModel: FocusViewModel) {
+    val focusDuration by focusViewModel.focusDuration.collectAsState()
+
     Column(modifier = modifier.padding(16.dp).fillMaxSize()) {
-        Text("General", style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(16.dp))
-        // Add General settings options here
-
-        Spacer(modifier = Modifier.height(32.dp))
-
         Text("Features", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
-        // Add Feature settings options here
+        Text("Focus Duration: $focusDuration minutes", style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(8.dp))
+        Slider(
+            value = focusDuration.toFloat(),
+            onValueChange = { focusViewModel.setFocusDuration(it.toInt()) },
+            valueRange = 5f..60f,
+            steps = 10
+        )
     }
 }
 
 
 @Composable
-fun FocusScreen(modifier: Modifier = Modifier) {
+fun FocusScreen(modifier: Modifier = Modifier, focusViewModel: FocusViewModel) {
 
-    // basic state (later can move to ViewModel)
-    val focusDurationMinutes = 25
-    var timeLeftInSeconds by remember { mutableIntStateOf(focusDurationMinutes * 60) }
-    var isFocusing by remember { mutableStateOf(false) }
-    var todayMinutes by remember { mutableIntStateOf(60) }
-
-    // Countdown logic
-    LaunchedEffect(key1 = isFocusing, key2 = timeLeftInSeconds) {
-        if (isFocusing && timeLeftInSeconds > 0) {
-            delay(1000L)
-            timeLeftInSeconds--
-        } else if (isFocusing && timeLeftInSeconds == 0) {
-            isFocusing = false // Stop the timer when it reaches 0
-        }
-    }
+    // Read state from the ViewModel
+    val focusDurationMinutes by focusViewModel.focusDuration.collectAsState()
+    val timeLeftInSeconds by focusViewModel.timeLeftInSeconds.collectAsState()
+    val isFocusing by focusViewModel.isFocusing.collectAsState()
+    val todayMinutes by focusViewModel.todayMinutes.collectAsState()
 
     // UI display values
     val minutes = timeLeftInSeconds / 60
     val seconds = timeLeftInSeconds % 60
     val timeDisplay = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
-    val progress = { 1f - timeLeftInSeconds.toFloat() / (focusDurationMinutes * 60) }
+    val progress = if (focusDurationMinutes > 0) {
+        1f - timeLeftInSeconds.toFloat() / (focusDurationMinutes * 60)
+    } else {
+        0f
+    }
     val buttonText = when {
         isFocusing -> "Pause"
-        timeLeftInSeconds < focusDurationMinutes * 60 && timeLeftInSeconds > 0 -> "Resume"
+        // If timer has started but is not at the beginning
+        timeLeftInSeconds < focusDurationMinutes * 60 -> "Resume"
         else -> "Start"
     }
 
@@ -425,7 +547,7 @@ fun FocusScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(16.dp))
 
             LinearProgressIndicator(
-                progress = progress,
+                progress = { progress },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -448,12 +570,7 @@ fun FocusScreen(modifier: Modifier = Modifier) {
 
         // ───── Action button ─────
         Button(
-            onClick = {
-                if (timeLeftInSeconds == 0) { // If timer finished, reset it
-                    timeLeftInSeconds = focusDurationMinutes * 60
-                }
-                isFocusing = !isFocusing
-            },
+            onClick = { focusViewModel.handleTimerAction() },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = buttonText)
@@ -473,7 +590,7 @@ fun DefaultPreview() {
 @Composable
 fun HomeScreenPreview() {
     MaterialTheme {
-        HomeScreen()
+        HomeScreen(focusViewModel = viewModel())
     }
 }
 
