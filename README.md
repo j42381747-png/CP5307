@@ -10,6 +10,7 @@ DeepFocus is a utility application designed to help users stay focused while wor
 ### Version 1.0
 
 The first version of DeepFocus focused on the core functionality of the application. It provided a simple focus timer that allowed users to set a duration and track their focus session. The main goal of this version was to implement the basic timing feature and ensure the application worked reliably.
+Note: `DeepFocusHomeScreen.kt` belongs to Version 1.0 and was used with the original `MainActivity.kt` to implement the basic focus timer interface.
 
 ### Version 2.0
 
