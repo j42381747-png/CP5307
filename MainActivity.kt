@@ -3,6 +3,7 @@ package com.example.deepfocus
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,15 +19,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -34,6 +42,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +57,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import java.util.Locale
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -75,38 +91,86 @@ data class FocusPost(
     val location: String? = null
 )
 
-sealed class Screen(val title: String) {
-    object Home : Screen("Home")
-    object Focus : Screen("Focus")
-    object Settings : Screen("Settings")
+sealed class Screen(val route: String, val title: String) {
+    object Home : Screen("home", "Home")
+    object Focus : Screen("focus", "Focus")
+    object Me : Screen("me", "Me")
+    object ProfileEditor : Screen("profile_editor", "Edit Profile")
+    object Settings : Screen("settings", "Settings")
 }
 
+val bottomNavItems = listOf(Screen.Home, Screen.Focus, Screen.Me)
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeepFocusApp() {
-    var currentScreen: Screen by remember { mutableStateOf(Screen.Home) }
+    val navController = rememberNavController()
 
     Scaffold(
-        bottomBar = {
-            NavigationBar {
-                val items = listOf(Screen.Home, Screen.Focus, Screen.Settings)
-                items.forEach { screen ->
-                    NavigationBarItem(
-                        icon = {
-                            when (screen) {
-                                Screen.Home -> Icon(Icons.Filled.Home, contentDescription = screen.title)
-                                Screen.Focus -> Icon(Icons.Filled.HourglassEmpty, contentDescription = screen.title)
-                                Screen.Settings -> Icon(Icons.Filled.Settings, contentDescription = screen.title)
+        topBar = {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
+
+            // Determine title and whether to show components based on route
+            val topBarTitle: String? = when (currentRoute) {
+                Screen.Home.route -> "DeepFocus"
+                Screen.ProfileEditor.route -> "Edit Profile"
+                Screen.Settings.route -> "Settings"
+                else -> null // No title for other screens
+            }
+
+            // Show top bar only if there's a title
+            if (topBarTitle != null) {
+                CenterAlignedTopAppBar(
+                    title = { Text(topBarTitle) },
+                    navigationIcon = {
+                        // Show back button only for nested screens
+                        if (currentRoute == Screen.ProfileEditor.route || currentRoute == Screen.Settings.route) {
+                            IconButton(onClick = { navController.navigateUp() }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                             }
-                        },
-                        label = { Text(screen.title) },
-                        selected = currentScreen == screen,
-                        onClick = { currentScreen = screen }
-                    )
+                        }
+                    },
+                    actions = {
+                        // Show message icon only for home screen
+                        if (currentRoute == Screen.Home.route) {
+                            IconButton(onClick = { /* TODO: Navigate to messages */ }) {
+                                Icon(Icons.Default.Email, contentDescription = "Messages")
+                            }
+                        }
+                    }
+                )
+            }
+        },
+        bottomBar = {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
+            if (currentRoute in bottomNavItems.map { it.route }) {
+                NavigationBar {
+                    bottomNavItems.forEach { screen ->
+                        NavigationBarItem(
+                            icon = {
+                                when (screen) {
+                                    Screen.Home -> Icon(Icons.Filled.Home, contentDescription = screen.title)
+                                    Screen.Focus -> Icon(Icons.Filled.HourglassEmpty, contentDescription = screen.title)
+                                    Screen.Me -> Icon(Icons.Filled.Person, contentDescription = screen.title)
+                                    else -> {}
+                                }
+                            },
+                            label = { Text(screen.title) },
+                            selected = currentRoute == screen.route,
+                            onClick = { navController.navigate(screen.route) {
+                                popUpTo(navController.graph.startDestinationId)
+                                launchSingleTop = true
+                            } }
+                        )
+                    }
                 }
             }
         },
         floatingActionButton = {
-            if (currentScreen == Screen.Home) {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            if (navBackStackEntry?.destination?.route == Screen.Home.route) {
                 FloatingActionButton(
                     onClick = { /* TODO: Handle FAB click for new post */ },
                 ) {
@@ -115,11 +179,18 @@ fun DeepFocusApp() {
             }
         }
     ) { innerPadding ->
-        when (currentScreen) {
-            Screen.Home -> HomeScreen(modifier = Modifier.padding(innerPadding))
-            Screen.Focus -> FocusScreen(modifier = Modifier.padding(innerPadding))
-            Screen.Settings -> SettingsScreen(modifier = Modifier.padding(innerPadding))
-        }
+        AppNavHost(navController = navController, modifier = Modifier.padding(innerPadding))
+    }
+}
+
+@Composable
+fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier) {
+    NavHost(navController, startDestination = Screen.Home.route, modifier = modifier) {
+        composable(Screen.Home.route) { HomeScreen() }
+        composable(Screen.Focus.route) { FocusScreen() }
+        composable(Screen.Me.route) { MeScreen(navController = navController) }
+        composable(Screen.ProfileEditor.route) { ProfileEditorScreen() }
+        composable(Screen.Settings.route) { SettingsScreen() }
     }
 }
 
@@ -194,12 +265,102 @@ fun HomeScreen(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun MeScreen(modifier: Modifier = Modifier, navController: NavController) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(text = "Settings", fontSize = 24.sp)
+        // --- Top Part: Avatar and Name ---
+        Spacer(modifier = Modifier.height(32.dp))
+        Icon(
+            imageVector = Icons.Default.Person,
+            contentDescription = "User Avatar",
+            modifier = Modifier.size(120.dp),
+            tint = Color.Gray
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("User Name", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // --- Bottom Part: Options ---
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Points
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("My Points", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    Text("1,234", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+                // Edit Profile
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController.navigate(Screen.ProfileEditor.route) }
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit Profile")
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Edit Profile", style = MaterialTheme.typography.titleMedium)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+                // Settings
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { navController.navigate(Screen.Settings.route) }
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Settings", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileEditorScreen(modifier: Modifier = Modifier) {
+    var userName by remember { mutableStateOf("User Name") }
+    var birthday by remember { mutableStateOf("YYYY-MM-DD") }
+
+    Column(modifier = modifier.padding(16.dp).fillMaxSize()) {
+        Icon(Icons.Default.Person, contentDescription = "User Avatar", modifier = Modifier.size(120.dp).align(Alignment.CenterHorizontally), tint = Color.Gray)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { /* TODO: Handle image picking */ }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Change Avatar")
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Text("User Name", style = MaterialTheme.typography.labelMedium)
+        TextField(value = userName, onValueChange = { userName = it }, modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Birthday", style = MaterialTheme.typography.labelMedium)
+        TextField(value = birthday, onValueChange = { birthday = it }, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+fun SettingsScreen(modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(16.dp).fillMaxSize()) {
+        Text("General", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        // Add General settings options here
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text("Features", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        // Add Feature settings options here
     }
 }
 
@@ -226,7 +387,7 @@ fun FocusScreen(modifier: Modifier = Modifier) {
     // UI display values
     val minutes = timeLeftInSeconds / 60
     val seconds = timeLeftInSeconds % 60
-    val timeDisplay = String.format("%02d:%02d", minutes, seconds)
+    val timeDisplay = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
     val progress = { 1f - timeLeftInSeconds.toFloat() / (focusDurationMinutes * 60) }
     val buttonText = when {
         isFocusing -> "Pause"
@@ -313,5 +474,14 @@ fun DefaultPreview() {
 fun HomeScreenPreview() {
     MaterialTheme {
         HomeScreen()
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun MeScreenPreview() {
+    MaterialTheme {
+        // MeScreen requires a NavController, so we create a dummy one for the preview.
+        MeScreen(navController = rememberNavController())
     }
 }
