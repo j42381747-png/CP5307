@@ -112,8 +112,26 @@ object RetrofitInstance {
     }
 }
 
+// --- Repository Pattern ---
+class QuoteRepository {
+    private val apiService = RetrofitInstance.api
+
+    suspend fun getDailyQuote(): String {
+        return try {
+            val quotes = apiService.getRandomQuote()
+            if (quotes.isNotEmpty()) {
+                "\"${quotes[0].q}\" - ${quotes[0].a}"
+            } else {
+                "Could not fetch quote."
+            }
+        } catch (e: Exception) {
+            "Could not fetch quote."
+        }
+    }
+}
+
 // --- ViewModel for Focus and Settings ---
-class FocusViewModel : ViewModel() {
+class FocusViewModel(private val quoteRepository: QuoteRepository = QuoteRepository()) : ViewModel() {
     // Backing properties
     private val _focusDuration = MutableStateFlow(25) // in minutes
     private val _timeLeftInSeconds = MutableStateFlow(25 * 60)
@@ -136,16 +154,7 @@ class FocusViewModel : ViewModel() {
 
     private fun fetchQuote() {
         viewModelScope.launch {
-            try {
-                val quotes = RetrofitInstance.api.getRandomQuote()
-                if (quotes.isNotEmpty()) {
-                    _dailyQuote.value = "\"${quotes[0].q}\" - ${quotes[0].a}"
-                } else {
-                    _dailyQuote.value = "Could not fetch quote."
-                }
-            } catch (e: Exception) {
-                _dailyQuote.value = "Could not fetch quote."
-            }
+            _dailyQuote.value = quoteRepository.getDailyQuote()
         }
     }
 
