@@ -32,3 +32,15 @@ A complete timer mechanism was implemented using Compose state management and co
 A progress indicator was added to enhance visual feedback, and session tracking was introduced to monitor daily focus duration.
 
 These improvements strengthened the application's core purpose as a focus-oriented utility tool and demonstrated deeper integration of Jetpack Compose state management.
+
+### Version 4.0
+
+Version 4.0 focused on improving application architecture and code structure while enhancing overall stability and maintainability.
+
+In this version, state management was refactored using the ViewModel pattern to better separate UI logic from business logic. This change improved code organisation and aligned the application with modern Android architectural practices.
+
+The focus timer system was further refined to ensure smoother state transitions between start, pause, and resume actions. Daily focus statistics are now managed more cleanly, supporting better scalability for future updates.
+
+Additionally, the overall project structure was improved to reflect a more modular and maintainable design, preparing the application for future enhancements such as networking features and data persistence.
+
+Version 4.0 represents the transition from a functional prototype to a more structured and production-oriented Android utility application.
